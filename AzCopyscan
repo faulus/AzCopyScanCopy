@@ -1,0 +1,228 @@
+
+
+
+$tempFolder = "C:\Temp\"
+$itemType = "Directory"
+$azCopyFolderName = "AzCopy"
+$tempAzCopyFolder = $tempFolder + $azCopyFolderName
+$writeEmptyLine = "`n"
+$writeSeperator = " - "
+$writeSpace = " "
+$global:currenttime = Set-PSBreakpoint -Variable currenttime -Mode Read -Action {$global:currenttime= Get-Date}
+$foregroundColor1 = "Yellow"
+$foregroundColor2 = "Red"
+$azCopyUrl = "https://aka.ms/downloadazcopy"
+$azCopyMsi = "MicrosoftAzureStorageAzCopy_netcore_x64.msi"
+$azCopyPath = $tempAzCopyFolder + "\" + $azCopyMsi
+$msiExe = "msiexec.exe"
+$arguments = "/i","$azCopyPath","/q"
+$filename="LOG_" + (Get-Date -Format "yyyy-MM-dd-HH-mm-ss") + ".log"
+
+
+
+##----------------------------------------------------------------------------------------------------------------------------------------------------
+
+## Create C:\Temp folder if not exists
+
+If(!(test-path $tempFolder))
+{
+New-Item -ItemType $itemType -Force -Path $tempFolder | Out-Null
+}
+
+Write-Host ($writeEmptyLine + "Temp folder available" + $writeSeperator + $currenttime)`
+-foregroundcolor $foregroundColor1 $writeEmptyLine 
+
+##----------------------------------------------------------------------------------------------------------------------------------------------------
+
+## Create AzCopy folder in C:\Temp if not exists
+
+If(!(test-path $tempAzCopyFolder))
+{
+New-Item -Path $tempFolder -Name $azCopyFolderName -ItemType $itemType | Out-Null
+}
+ 
+Write-Host ($writeEmptyLine + $azCopyFolderName + $writeSpace + "folder available in Temp folder" + $writeSeperator + $currenttime)`
+-foregroundcolor $foregroundColor1 $writeEmptyLine 
+
+##----------------------------------------------------------------------------------------------------------------------------------------------------
+
+## Write Download started
+
+Write-Host ($writeEmptyLine + "AzCopy download started" + $writeSeperator + $currenttime)`
+-foregroundcolor $foregroundColor1 $writeEmptyLine 
+
+##----------------------------------------------------------------------------------------------------------------------------------------------------
+
+## Download latest AzCopy version
+
+Function Get-AzCopy
+{
+Import-Module BitsTransfer
+Start-BitsTransfer -Source $azCopyUrl -Destination $azCopyPath
+Write-Host ($writeEmptyLine + $azCopyMsi + $writeSpace + "available" + $writeSeperator + $currenttime)`
+-foregroundcolor $foregroundColor1 $writeEmptyLine
+}
+
+
+
+##----------------------------------------------------------------------------------------------------------------------------------------------------
+
+## Run AzCopy .msi silently
+
+Function Install-AzCopy
+{
+Start-Process -FilePath $msiExe -ArgumentList $arguments -Wait
+Write-Host ($writeEmptyLine + "AzCopy installation has run" + $writeSeperator + $currenttime)`
+-foregroundcolor $foregroundColor1 $writeEmptyLine 
+}
+
+
+Function dellocate 
+{
+##----------------------------------------------------------------------------------------------------------------------------------------------------
+
+## Remove AzCopy .msi file and AzCopy folder after installation
+
+Get-ChildItem -Path $tempAzCopyFolder -Recurse -Force | Remove-Item -Force -Recurse
+Remove-Item $tempAzCopyFolder -force
+
+Write-Host ($writeEmptyLine + $azCopyMsi + $writeSpace + "deleted" + $writeSeperator + $currenttime)`
+-foregroundcolor $foregroundColor1 $writeEmptyLine
+
+##----------------------------------------------------------------------------------------------------------------------------------------------------
+
+## Exit PowerShell window 3 seconds after completion last section
+
+Write-Host ($writeEmptyLine + "Script completed" + $writeSeperator + $currenttime)`
+-foregroundcolor $foregroundColor2 $writeEmptyLine
+
+##----------------------------------------------------------------------------------------------------------------------------------------------------
+
+}
+
+
+##----------------------------------------------------------------------------------------------------------------------------------------------------
+
+## Function Scan -> this function don't make copy, just analyze 
+
+Function scan {
+
+param (
+    [Parameter(Mandatory = $true, 
+    HelpMessage= "Source Storage account name.")]
+    [String]$Source,
+    
+    [Parameter(Mandatory = $true, 
+    HelpMessage= "Destination Storage account name and SAS.")]
+    [String]$DestStorageAccountName,
+
+
+    [Parameter(Mandatory = $true, 
+    HelpMessage= "Destination Storage logs.")]
+    [String]$log_path,
+
+
+    [Parameter(Mandatory = $false, 
+    HelpMessage= "Input the full filePath of the AzCopy.exe, e.g.: C:\Program Files (x86)\Microsoft SDKs\Azure\AzCopy\AzCopy.exe")]
+    [String]$AzCopyPathA = "C:\Program Files (x86)\Microsoft SDKs\Azure\AzCopy"
+
+ )
+
+
+cd $AzCopyPathA
+$resultat = .\AzCopy.exe /Source:$Source /Dest:$DestStorageAccountName /L /S /V:$log_path/outputscan.log /Z:$log_path/restart.log >$log_path\$filename
+
+}
+
+
+##----------------------------------------------------------------------------------------------------------------------------------------------------
+
+## Function Copy -> Copy data from local or storage account using SAS to destination Azure Sotrage using SAS keys
+
+
+Function copy {
+
+param (
+    [Parameter(Mandatory = $true, 
+    HelpMessage= "Source Storage account name.")]
+    [String]$Source,
+    
+    [Parameter(Mandatory = $true, 
+    HelpMessage= "Destination Storage account name.")]
+    [String]$DestStorageAccountName,
+
+
+    [Parameter(Mandatory = $true, 
+    HelpMessage= "Destination Storage logs.")]
+    [String]$log_path,
+
+
+    [Parameter(Mandatory = $false, 
+    HelpMessage= "Input the full filePath of the AzCopy.exe, e.g.: C:\Program Files (x86)\Microsoft SDKs\Azure\AzCopy\AzCopy.exe")]
+    [String]$AzCopyPathA = "C:\Program Files (x86)\Microsoft SDKs\Azure\AzCopy"
+
+ )
+
+
+cd $AzCopyPathA
+$resultat = .\AzCopy.exe /Source:$Source /Dest:$DestStorageAccountName /L /S /V:$log_path/outputscan.log /Z:$log_path/restart.log >$log_path\$filename
+
+}
+
+
+
+##----------------------------------------------------------------------------------------------------------------------------------------------------
+
+## Function to extract old last access documents 
+
+Function Get-NeglectedFiles
+
+{
+
+ Param(
+ 
+    [Parameter(Mandatory = $true, 
+    HelpMessage= "Source Storage account name.")]
+    [String]$Source,
+
+
+    [Parameter(Mandatory = $true, 
+    HelpMessage= "Number Days")]
+    [String]$numberDays
+
+       )
+
+ $cutOffDate = (Get-Date).AddDays(-$numberDays)
+
+ Get-ChildItem -Path $Source -Recurse | Where-Object {$_.LastAccessTime -le $cutOffDate}  | select-object fullname, *time, length  | Export-CSV -notypeinformation -delimiter '|' -Path $log_path\archivedata.csv
+
+}
+
+
+
+##----------------------------------------------------------------------------------------------------------------------------------------------------
+
+## MAIN 
+
+ echo "Please Select your option"
+
+     echo "
+
+1- Install AzCopy
+2- SCAN
+3- COPY
+4- Scan Only Old Files
+"
+
+ $choix = Read-Host "Please Select your option"
+ cd $AzCopyPathA
+
+switch ($choix) {
+   "1"{$resultat = Get-AzCopy |Install-AzCopy | dellocate ; break}
+   "2" {$resultat = scan ; break}
+   "3" {$resultat = copy; break}
+   "4" {$resultat = Get-NeglectedFiles; break}
+   default {"Something else happened"; break}
+}
+
+
